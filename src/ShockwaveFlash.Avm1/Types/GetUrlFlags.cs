@@ -7,6 +7,7 @@ public enum GetUrlFlags : byte
     MethodGet = 1,
     MethodPost = 2,
     MethodMask = 3,
+    ReservedMask = 0x3C,
 
     LoadTarget = 1 << 6,
     LoadVariables = 1 << 7

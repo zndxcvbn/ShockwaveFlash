@@ -129,6 +129,8 @@ public static class Avm1Disassembler
             ActionDefineFunction2 a => $"DefineFunction2 {Quote(a.Name)}({string.Join(", ", a.Parameters.Select(p => p.Name))})",
             ActionTry => "Try",
             ActionUnknown a => $"Unknown(0x{(byte)a.Opcode:X2})",
+            ActionMalformed a => $"Malformed({a.Opcode}: {a.Reason})",
+            ActionTrailingData a => $"TrailingData({a.Data.Length} bytes)",
             _ => action.Opcode.ToString()
         };
     }

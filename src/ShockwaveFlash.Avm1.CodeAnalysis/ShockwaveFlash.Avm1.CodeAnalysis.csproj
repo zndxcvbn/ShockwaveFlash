@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>ShockwaveFlash.Avm1.CodeAnalysis</PackageId>
+    <Description>ActionScript 1/2 compiler and decompiler services for ShockwaveFlash.Avm1. Recover structured Source HIR from AVM1, emit AS2, compile source models back to verified bytecode, and link code into SWF files.</Description>
+    <PackageTags>swf;flash;avm1;actionscript;compiler;decompiler;code-analysis</PackageTags>
+    <PackageReadmeFile />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShockwaveFlash.Benchmarks" />
+    <InternalsVisibleTo Include="ShockwaveFlash.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ShockwaveFlash\ShockwaveFlash.csproj" />
+    <ProjectReference Include="..\ShockwaveFlash.Avm1\ShockwaveFlash.Avm1.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="ShockwaveFlash.IO.Binary" />
+  </ItemGroup>
+
+</Project>

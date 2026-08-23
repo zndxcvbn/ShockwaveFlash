@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ShockwaveFlash\ShockwaveFlash.csproj" />
     <ProjectReference Include="..\ShockwaveFlash.Avm1\ShockwaveFlash.Avm1.csproj" />
+    <ProjectReference Include="..\ShockwaveFlash.Avm1.CodeAnalysis\ShockwaveFlash.Avm1.CodeAnalysis.csproj" />
     <ProjectReference Include="..\ShockwaveFlash.Rendering\ShockwaveFlash.Rendering.csproj" />
     <ProjectReference Include="..\ShockwaveFlash.SourceGenerators\ShockwaveFlash.SourceGenerators.csproj" />
   </ItemGroup>
@@ -33,6 +34,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Avm1\Compatibility\**\*"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

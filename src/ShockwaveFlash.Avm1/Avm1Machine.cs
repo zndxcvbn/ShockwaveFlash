@@ -27,6 +27,8 @@ public sealed class Avm1Machine
 
     public IReadOnlySet<ActionOpcode> UnsupportedOpcodes => _unsupported;
 
+    public Avm1Value ReturnValue { get; private set; } = Avm1Value.Undefined;
+
     public Avm1Machine(byte swfVersion = 6)
     {
         _version = swfVersion;
@@ -41,8 +43,17 @@ public sealed class Avm1Machine
 
     public void Execute(IReadOnlyList<Action> actions, bool strict = false)
     {
-        foreach (var action in actions)
+        ReturnValue = Avm1Value.Undefined;
+        var actionOffsets = BuildActionOffsets(actions);
+        var actionByOffset = new Dictionary<int, int>(actions.Count + 1);
+        for (var i = 0; i < actionOffsets.Length; i++)
+            actionByOffset[actionOffsets[i]] = i;
+
+        var instructionIndex = 0;
+        while (instructionIndex < actions.Count)
         {
+            var action = actions[instructionIndex];
+            var nextInstruction = instructionIndex + 1;
             switch (action)
             {
                 case ActionConstantPool constantPool:
@@ -67,6 +78,17 @@ public sealed class Avm1Machine
                         _globals.Members[ToStr(Pop())] = value;
                         break;
                     }
+
+                case ActionDefineLocal:
+                    {
+                        var value = Pop();
+                        _globals.Members[ToStr(Pop())] = value;
+                        break;
+                    }
+
+                case ActionDefineLocal2:
+                    _globals.Members[ToStr(Pop())] = Avm1Value.Undefined;
+                    break;
 
                 case ActionGetMember:
                     {
@@ -108,6 +130,20 @@ public sealed class Avm1Machine
                         _stack.Push(items);
                         break;
                     }
+
+                case ActionEnumerate:
+                    {
+                        var name = ToStr(Pop());
+                        PushEnumeration(
+                            _globals.Members.GetValueOrDefault(
+                                name,
+                                Avm1Value.Undefined));
+                        break;
+                    }
+
+                case ActionEnumerate2:
+                    PushEnumeration(Pop());
+                    break;
 
                 case ActionNewObject:
                     {
@@ -379,6 +415,14 @@ public sealed class Avm1Machine
                     _stack.Push(ToStr(Pop()));
                     break;
 
+                case ActionIncrement:
+                    _stack.Push(ToNum(Pop()) + 1.0);
+                    break;
+
+                case ActionDecrement:
+                    _stack.Push(ToNum(Pop()) - 1.0);
+                    break;
+
                 case ActionTypeOf:
                     _stack.Push(TypeOf(Pop()));
                     break;
@@ -408,6 +452,35 @@ public sealed class Avm1Machine
                         break;
                     }
 
+                case ActionIf conditional:
+                    {
+                        var condition = Pop();
+                        var isTrue = _version < 5
+                            ? ToNum(condition) != 0.0
+                            : ToBool(condition);
+                        if (isTrue)
+                        {
+                            nextInstruction = ResolveBranchTarget(
+                                instructionIndex,
+                                conditional.BranchOffset,
+                                actionOffsets,
+                                actionByOffset);
+                        }
+                        break;
+                    }
+
+                case ActionJump jump:
+                    nextInstruction = ResolveBranchTarget(
+                        instructionIndex,
+                        jump.BranchOffset,
+                        actionOffsets,
+                        actionByOffset);
+                    break;
+
+                case ActionReturn:
+                    ReturnValue = Pop();
+                    return;
+
                 case ActionEnd:
                     return;
 
@@ -417,7 +490,36 @@ public sealed class Avm1Machine
                     _unsupported.Add(action.Opcode);
                     break;
             }
+
+            instructionIndex = nextInstruction;
         }
+    }
+
+    private int[] BuildActionOffsets(IReadOnlyList<Action> actions)
+    {
+        var offsets = new int[actions.Count + 1];
+        for (var i = 0; i < actions.Count; i++)
+        {
+            offsets[i + 1] = checked(
+                offsets[i] + Action.EncodeCollection([actions[i]], _version).Length);
+        }
+        return offsets;
+    }
+
+    private static int ResolveBranchTarget(
+        int instructionIndex,
+        short branchOffset,
+        int[] actionOffsets,
+        Dictionary<int, int> actionByOffset)
+    {
+        var targetOffset = checked(
+            actionOffsets[instructionIndex + 1] + branchOffset);
+        if (actionByOffset.TryGetValue(targetOffset, out var target))
+            return target;
+
+        throw new InvalidOperationException(
+            $"AVM1 branch at byte offset {actionOffsets[instructionIndex]} targets " +
+            $"non-action boundary {targetOffset}.");
     }
 
     private Avm1Value Resolve(PushValue value)
@@ -450,6 +552,23 @@ public sealed class Avm1Machine
     private Avm1Value Pop()
     {
         return _stack.Count > 0 ? _stack.Pop() : Avm1Value.Undefined;
+    }
+
+    private void PushEnumeration(Avm1Value value)
+    {
+        _stack.Push(Avm1Value.Null);
+        switch (value)
+        {
+            case Avm1Object @object:
+                foreach (var name in @object.Members.Keys.Reverse())
+                    _stack.Push(name);
+                break;
+
+            case Avm1Array array:
+                for (var index = array.Items.Count - 1; index >= 0; index--)
+                    _stack.Push(index.ToString(CultureInfo.InvariantCulture));
+                break;
+        }
     }
 
     private void DropArguments()

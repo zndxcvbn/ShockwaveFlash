@@ -19,6 +19,8 @@ public class DefineFont2Tag : Tag
 
     public FontFlags Flags { get; set; }
 
+    public ReadOnlyMemory<byte> ExtensionData { get; set; }
+
     public bool IsBold =>
         Flags.HasFlag(FontFlags.IsBold);
 
@@ -43,7 +45,15 @@ public class DefineFont2Tag : Tag
     public bool HasLayout =>
         Layout is not null;
 
-    public DefineFont2Tag(TagMetadata metadata, ushort id, string name, Language language, FontLayout? layout, FontGlyph[] glyphs, FontFlags flags) : base(metadata)
+    public DefineFont2Tag(
+        TagMetadata metadata,
+        ushort id,
+        string name,
+        Language language,
+        FontLayout? layout,
+        FontGlyph[] glyphs,
+        FontFlags flags,
+        ReadOnlyMemory<byte> extensionData = default) : base(metadata)
     {
         Id = id;
         Name = name;
@@ -51,6 +61,7 @@ public class DefineFont2Tag : Tag
         Layout = layout;
         Glyphs = glyphs;
         Flags = flags;
+        ExtensionData = extensionData;
     }
 
     public static DefineFont2Tag Decode(MemoryReader reader, TagMetadata metadata, byte swfVersion, byte fontVersion)
@@ -65,8 +76,13 @@ public class DefineFont2Tag : Tag
         for (var i = 0; i < numGlyphs; i++)
             glyphs[i] = new FontGlyph([], 0, 0, null);
 
+        ReadOnlyMemory<byte> extensionData = default;
         if (numGlyphs is 0 && reader.Remaining > 0)
+        {
             reader.Advance(flags.HasFlag(FontFlags.HasWideOffsets) ? sizeof(uint) : sizeof(ushort));
+            if (fontVersion is 3 && reader.Remaining > 0)
+                extensionData = reader.ReadMemoryToEnd();
+        }
         else if (numGlyphs > 0 && reader.Remaining > 0)
         {
             var offsets = new uint[numGlyphs];
@@ -143,8 +159,8 @@ public class DefineFont2Tag : Tag
 
         return fontVersion switch
         {
-            2 => new DefineFont2Tag(metadata, id, name, language, layout, glyphs, flags),
-            3 => new DefineFont3Tag(metadata, id, name, language, layout, glyphs, flags),
+            2 => new DefineFont2Tag(metadata, id, name, language, layout, glyphs, flags, extensionData),
+            3 => new DefineFont3Tag(metadata, id, name, language, layout, glyphs, flags, extensionData),
             _ => throw new SwfFormatException($"Font version {fontVersion} is not supported.")
         };
     }
@@ -166,6 +182,8 @@ public class DefineFont2Tag : Tag
                 writer.WriteUInt32(0);
             else
                 writer.WriteUInt16(0);
+
+            writer.WriteMemory(ExtensionData);
 
             return;
         }

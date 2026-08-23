@@ -11,6 +11,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ShockwaveFlash.Avm1.CodeAnalysis" />
+    <InternalsVisibleTo Include="ShockwaveFlash.Benchmarks" />
     <InternalsVisibleTo Include="ShockwaveFlash.Tests" />
   </ItemGroup>
 

@@ -24,6 +24,13 @@ public sealed class ActionGetURL2 : Action
     public SendVarsMethod SendVarsMethod =>
         (SendVarsMethod)(byte)(Flags & GetUrlFlags.MethodMask);
 
+    public bool HasValidFlags => IsValidFlags(Flags);
+
+    public static bool IsValidFlags(GetUrlFlags flags) =>
+        (flags & GetUrlFlags.ReservedMask) == 0 &&
+        (byte)(flags & GetUrlFlags.MethodMask) <=
+            (byte)GetUrlFlags.MethodPost;
+
     public ActionGetURL2(GetUrlFlags flags) : base(ActionOpcode.GetURL2)
     {
         Flags = flags;

@@ -22,7 +22,20 @@ public abstract class Action
 
     public static IReadOnlyList<Action> DecodeCollection(ReadOnlyMemory<byte> buffer, byte swfVersion, bool strict = false)
     {
-        var context = new Avm1Context(swfVersion, strict);
+        return DecodeCollection(
+            buffer,
+            swfVersion,
+            strict ? Avm1ActionDecodeMode.Strict : Avm1ActionDecodeMode.Permissive);
+    }
+
+    public static IReadOnlyList<Action> DecodeCollection(
+        ReadOnlyMemory<byte> buffer,
+        byte swfVersion,
+        Avm1ActionDecodeMode mode)
+    {
+        var context = new Avm1Context(
+            swfVersion,
+            strict: mode is not Avm1ActionDecodeMode.Permissive);
         var actions = new List<Action>(capacity: 64);
         var reader = new MemoryReader(buffer);
 
@@ -36,32 +49,97 @@ public abstract class Action
             if (opcodeRaw >= 128)
                 payloadLength = reader.ReadUInt16();
 
-            var actionReader = new MemoryReader(reader.ReadMemory(payloadLength));
+            var payload = reader.ReadMemory(payloadLength);
+            var actionReader = new MemoryReader(payload);
+            var trailerReader = new MemoryReader(buffer[reader.Position..]);
 
             Action action;
 
             try
             {
-                action = Decode(actionReader, reader, opcode, context);
+                action = Decode(actionReader, trailerReader, opcode, context);
             }
             catch (DecoderFallbackException exception)
             {
-                throw new SwfFormatException($"AVM1 action {opcode} contains invalid UTF-8.", exception);
+                if (!TryRecoverMalformedAction(
+                        mode,
+                        opcode,
+                        payload,
+                        $"Invalid UTF-8: {exception.Message}",
+                        out action))
+                {
+                    throw new SwfFormatException($"AVM1 action {opcode} contains invalid UTF-8.", exception);
+                }
+            }
+            catch (SwfException exception)
+            {
+                if (!TryRecoverMalformedAction(
+                        mode,
+                        opcode,
+                        payload,
+                        exception.Message,
+                        out action))
+                {
+                    throw;
+                }
             }
 
-            if (context.Strict && action is ActionUnknown)
+            if (mode is Avm1ActionDecodeMode.Strict && action is ActionUnknown)
                 throw new SwfFormatException($"Unknown AVM1 opcode 0x{opcodeRaw:X2}.");
 
-            if (context.Strict && actionReader.Remaining > 0)
-                throw new SwfFormatException($"AVM1 action {opcode} declared {payloadLength} bytes but consumed {actionReader.Position}.");
+            if (actionReader.Remaining > 0 && mode is not Avm1ActionDecodeMode.Permissive)
+            {
+                var reason = $"AVM1 action {opcode} declared {payloadLength} bytes but consumed {actionReader.Position}.";
+                if (!TryRecoverMalformedAction(mode, opcode, payload, reason, out action))
+                    throw new SwfFormatException(reason);
+            }
+
+            if (action is not ActionMalformed)
+                reader.Advance(trailerReader.Position);
 
             actions.Add(action);
 
             if (action is ActionEnd)
+            {
+                if (mode is Avm1ActionDecodeMode.Strict && reader.Remaining > 0)
+                {
+                    throw new SwfFormatException(
+                        $"AVM1 action stream contains {reader.Remaining} bytes after ActionEnd.");
+                }
+
+                if (mode is Avm1ActionDecodeMode.RecoverMalformed && reader.Remaining > 0)
+                    actions.Add(new ActionTrailingData(reader.ReadMemoryToEnd()));
                 break;
+            }
         }
 
         return actions;
+    }
+
+    private static bool TryRecoverMalformedAction(
+        Avm1ActionDecodeMode mode,
+        ActionOpcode opcode,
+        ReadOnlyMemory<byte> payload,
+        string reason,
+        out Action action)
+    {
+        if (mode is Avm1ActionDecodeMode.RecoverMalformed && !HasTrailer(opcode))
+        {
+            action = new ActionMalformed(opcode, payload, reason);
+            return true;
+        }
+
+        action = null!;
+        return false;
+    }
+
+    private static bool HasTrailer(ActionOpcode opcode)
+    {
+        return opcode is
+            ActionOpcode.With or
+            ActionOpcode.DefineFunction or
+            ActionOpcode.DefineFunction2 or
+            ActionOpcode.Try;
     }
 
     public static ReadOnlyMemory<byte> EncodeCollection(IReadOnlyList<Action> actions, byte swfVersion)
@@ -72,6 +150,12 @@ public abstract class Action
 
         foreach (var action in actions)
         {
+            if (action is ActionTrailingData trailingData)
+            {
+                writer.WriteMemory(trailingData.Data);
+                continue;
+            }
+
             var opcode = (byte)action.Opcode;
             writer.WriteUInt8(opcode);
 
